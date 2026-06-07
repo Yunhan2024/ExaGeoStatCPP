@@ -59,5 +59,7 @@
   "MeanTrendRemoval": "false",
   "IsClimateEmulator": "false",
   "Lat": "0",
-  "Lon": "0"
+  "Lon": "0",
+  "ClusteringMode": "none",
+  "LocationsFile": ""
 }

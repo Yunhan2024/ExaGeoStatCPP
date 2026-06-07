@@ -12,6 +12,10 @@
  * @date 2025-02-17
 **/
 
+#include <fstream>
+#include <sstream>
+#include <stdexcept>
+
 #include <data-generators/concrete/runtime/StarpuGenerator.hpp>
 #include <data-generators/LocationGenerator.hpp>
 #include <data-loader/concrete/CSVLoader.hpp>
@@ -20,6 +24,46 @@ using namespace exageostat::common;
 using namespace exageostat::results;
 using namespace exageostat::configurations;
 using namespace exageostat::generators::synthetic::starpu;
+
+namespace {
+    template<typename T>
+    void LoadLocationsFromCSV(const std::string &aFilePath, int aN, Dimension aDimension,
+                              exageostat::dataunits::Locations<T> &aLocations) {
+        std::ifstream file(aFilePath);
+        if (!file.is_open()) {
+            throw std::runtime_error("Cannot open locations file: " + aFilePath);
+        }
+        std::string line;
+        int count = 0;
+        while (std::getline(file, line) && count < aN) {
+            if (line.empty()) continue;
+            std::istringstream ss(line);
+            std::string token;
+            // Read x
+            if (!std::getline(ss, token, ',')) continue;
+            T x = static_cast<T>(std::stod(token));
+            // Read y
+            if (!std::getline(ss, token, ',')) continue;
+            T y = static_cast<T>(std::stod(token));
+
+            aLocations.GetLocationX()[count] = x;
+            aLocations.GetLocationY()[count] = y;
+            if (aDimension == Dimension3D) {
+                // Read z if available
+                if (std::getline(ss, token, ',')) {
+                    aLocations.GetLocationZ()[count] = static_cast<T>(std::stod(token));
+                } else {
+                    aLocations.GetLocationZ()[count] = 0;
+                }
+            }
+            count++;
+        }
+        if (count < aN) {
+            throw std::runtime_error("Locations file has only " + std::to_string(count) +
+                                     " rows, but N=" + std::to_string(aN) + " requested.");
+        }
+    }
+} // anonymous namespace
 
 template<typename T>
 StarpuGenerator<T> *StarpuGenerator<T>::GetInstance() {
@@ -47,8 +91,18 @@ StarpuGenerator<T>::CreateSyntheticData(Configurations &aConfigurations, exageos
     aConfigurations.SetInitialTheta(aConfigurations.GetInitialTheta());
 
     // Generate Locations phase
-    LocationGenerator<T>::GenerateLocations(n, aConfigurations.GetTimeSlot(), aConfigurations.GetDimension(),
-                                            *locations);
+    std::string locations_file;
+    try { locations_file = aConfigurations.GetLocationsFile(); } catch (...) {}
+    if (!locations_file.empty()) {
+        // Load external coordinates from CSV, then apply ordering
+        LoadLocationsFromCSV(locations_file, n, aConfigurations.GetDimension(), *locations);
+        if (aConfigurations.GetDimension() != DimensionST) {
+            LocationGenerator<T>::ApplyOrdering(n, aConfigurations.GetDimension(), *locations, aConfigurations);
+        }
+    } else {
+        LocationGenerator<T>::GenerateLocations(n, aConfigurations.GetTimeSlot(), aConfigurations.GetDimension(),
+                                                *locations, aConfigurations);
+    }
     data->SetLocations(*locations);
 
     // Generate Descriptors phase

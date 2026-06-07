@@ -130,6 +130,13 @@ namespace exageostat::configurations::validator {
          */
         static common::Dimension CheckDimensionValue(const std::string &aDimension);
 
+        /**
+         * @brief Validates clustering mode input.
+         * @param[in] aMode clustering mode string.
+         * @return normalized mode string.
+         */
+        static std::string CheckClusteringModeValue(const std::string &aMode);
+
     private:
         /// A map of validation functions for different parameter types.
         static const std::unordered_map<std::string, std::function<std::any(const std::string&)>> mCheckersMap;

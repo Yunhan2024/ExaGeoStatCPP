@@ -258,3 +258,30 @@ std::vector<double> Results::GetFisherMatrix() const {
 std::vector<double> Results::GetPredictedMissedValues() const {
     return this->mPredictedMissedValues;
 }
+
+void Results::SetTLRRankStatistics(int aMinRank, int aMaxRank, double aAvgRank,
+                                   const std::string &aKeyMin,
+                                   const std::string &aKeyMax,
+                                   const std::string &aKeyAvg) {
+    this->mTLRMinRank = aMinRank;
+    this->mTLRMaxRank = aMaxRank;
+    this->mTLRAvgRank = aAvgRank;
+    UpdateDictionary(aKeyMin.empty() ? "TLR Min Rank" : aKeyMin, to_string(aMinRank));
+    UpdateDictionary(aKeyMax.empty() ? "TLR Max Rank" : aKeyMax, to_string(aMaxRank));
+
+    ostringstream oss;
+    oss << fixed << setprecision(2) << aAvgRank;
+    UpdateDictionary(aKeyAvg.empty() ? "TLR Avg Rank" : aKeyAvg, oss.str());
+}
+
+int Results::GetTLRMinRank() const {
+    return this->mTLRMinRank;
+}
+
+int Results::GetTLRMaxRank() const {
+    return this->mTLRMaxRank;
+}
+
+double Results::GetTLRAvgRank() const {
+    return this->mTLRAvgRank;
+}

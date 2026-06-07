@@ -15,6 +15,7 @@
 #define EXAGEOSTATCPP_LOCATIONGENERATOR_HPP
 
 #include <data-units/Locations.hpp>
+#include <configurations/Configurations.hpp>
 
 namespace exageostat::generators {
 
@@ -40,6 +41,14 @@ namespace exageostat::generators {
          *
          */
         static void GenerateLocations(const int &aN, const int &aTimeSlot, const common::Dimension &aDimension,
+                                      dataunits::Locations<T> &aLocations,
+                                      configurations::Configurations &aConfigurations);
+
+        /**
+         * @brief Original 4-parameter overload for backward compatibility.
+         * @details Generates locations and applies default Morton ordering (no clustering).
+         */
+        static void GenerateLocations(const int &aN, const int &aTimeSlot, const common::Dimension &aDimension,
                                       dataunits::Locations<T> &aLocations);
 
         /**
@@ -61,6 +70,10 @@ namespace exageostat::generators {
          */
         static void
         SortLocations(const int &aN, const common::Dimension &aDimension, dataunits::Locations<T> &aLocations);
+
+        static void
+        ApplyOrdering(const int &aN, const common::Dimension &aDimension, dataunits::Locations<T> &aLocations,
+                      configurations::Configurations &aConfigurations);
     };
 
     /**

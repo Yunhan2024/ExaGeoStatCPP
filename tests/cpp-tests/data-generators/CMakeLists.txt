@@ -14,5 +14,13 @@ set(EXAGEOSTAT_TESTFILES
         ${CMAKE_CURRENT_SOURCE_DIR}/concrete/TestCSVDataGenerator.cpp
 
         ${EXAGEOSTAT_TESTFILES}
-        PARENT_SCOPE
         )
+
+# Tile rank ordering test requires HiCMA for TLR compression
+if (USE_HICMA)
+    list(APPEND EXAGEOSTAT_TESTFILES
+            ${CMAKE_CURRENT_SOURCE_DIR}/concrete/TestTileRankOrdering.cpp
+            )
+endif ()
+
+set(EXAGEOSTAT_TESTFILES ${EXAGEOSTAT_TESTFILES} PARENT_SCOPE)

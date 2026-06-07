@@ -82,7 +82,7 @@ void LinearAlgebraMethods<T>::InitiateDescriptors(Configurations &aConfiguration
     aDescriptorData.SetDescriptor(common::CHAMELEON_DESCRIPTOR, DESCRIPTOR_PRODUCT, is_OOC, nullptr, float_point, dts,
                                   dts, dts * dts, 1, 1, 0, 0, 1, 1, p_grid, q_grid, false);
 
-    if (float_point == EXAGEOSTAT_REAL_DOUBLE) {
+    if (float_point == EXAGEOSTAT_REAL_DOUBLE && aP >= 2) {
         auto *CHAM_descC = aDescriptorData.GetDescriptor(common::CHAMELEON_DESCRIPTOR, DESCRIPTOR_C).chameleon_desc;
         aDescriptorData.SetDescriptor(common::CHAMELEON_DESCRIPTOR, DESCRIPTOR_C11, is_OOC, nullptr, float_point, dts,
                                       dts, dts * dts, full_problem_size, full_problem_size, 0, 0, CHAM_descC->m / 2,

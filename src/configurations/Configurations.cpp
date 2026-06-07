@@ -144,7 +144,8 @@ void Configurations::ValidateConfiguration() {
     if (mDictionary.find("tolerance") == mDictionary.end()) {
         SetTolerance(8);
     }
-     if (GetDataPath().empty()) {
+    // For StarPU runtime, only require data path when using real data (non-synthetic).
+    if (!GetIsSynthetic() && GetDataPath().empty()) {
         throw domain_error("You need to set the data path, before starting");
     }
 #else
@@ -262,6 +263,7 @@ void Configurations::PrintUsage() {
     LOGGER("--lat=value : Used to set the latitude band index for MeanTrendRemoval climate data processing (required for MeanTrendRemoval).")
     LOGGER("--lon=value : Used to set the longitude count for MeanTrendRemoval climate data processing (required for MeanTrendRemoval).")
     LOGGER("--resultspath=PATH : Used to set the output directory path for MeanTrendRemoval results (required for MeanTrendRemoval).")
+    LOGGER("--locationsfile=PATH : Used to load external coordinates from a CSV file (use with --issynthetic=true to generate synthetic Z on real locations).")
     LOGGER("\n\n")
 
     exit(0);

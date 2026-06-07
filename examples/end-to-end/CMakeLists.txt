@@ -16,6 +16,7 @@ add_executable(Example_Data_Generation_and_Modeling ${CMAKE_CURRENT_SOURCE_DIR}/
 add_executable(Example_Data_Generation_Modeling_and_Prediction ${CMAKE_CURRENT_SOURCE_DIR}/DataGenerationModelingAndPrediction.cpp)
 add_executable(Example_Data_Prediction ${CMAKE_CURRENT_SOURCE_DIR}/DataPrediction.cpp)
 add_executable(Example_Data_Generation_and_Prediction ${CMAKE_CURRENT_SOURCE_DIR}/DataGenerationAndPrediction.cpp)
+add_executable(Example_Rank_Evaluation ${CMAKE_CURRENT_SOURCE_DIR}/RankEvaluation.cpp)
 
 # Link the target executable with the project and any additional libraries
 target_link_libraries(Example_Data_Generation PUBLIC ${PROJECT_NAME}_INTERFACE)
@@ -24,3 +25,4 @@ target_link_libraries(Example_Data_Generation_and_Modeling PUBLIC ${PROJECT_NAME
 target_link_libraries(Example_Data_Generation_Modeling_and_Prediction PUBLIC ${PROJECT_NAME}_INTERFACE)
 target_link_libraries(Example_Data_Prediction PUBLIC ${PROJECT_NAME}_INTERFACE)
 target_link_libraries(Example_Data_Generation_and_Prediction PUBLIC ${PROJECT_NAME}_INTERFACE)
+target_link_libraries(Example_Rank_Evaluation PUBLIC ${PROJECT_NAME}_INTERFACE)

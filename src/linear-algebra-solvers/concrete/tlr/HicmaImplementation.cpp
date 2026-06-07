@@ -13,7 +13,10 @@
  * @date 2024-02-04
  **/
 
+#ifdef USE_MKL
 #include <mkl_service.h>
+#endif
+#include <climits>
 
 #ifdef USE_MPI
 #include <mpi.h>
@@ -68,9 +71,15 @@ void HicmaImplementation<T>::SetModelingDescriptors(std::unique_ptr<ExaGeoStatDa
                                               0, 0, full_problem_size, 1, p_grid, q_grid);
 #endif
 
-    aData->GetDescriptorData()->SetDescriptor(common::HICMA_DESCRIPTOR, DESCRIPTOR_CD, is_OOC, nullptr, 
-                                              float_point, MBD, NBD, MBD * NBD, MD, ND, 
+    aData->GetDescriptorData()->SetDescriptor(common::HICMA_DESCRIPTOR, DESCRIPTOR_CD, is_OOC, nullptr,
+                                              float_point, MBD, NBD, MBD * NBD, MD, ND,
                                               0, 0, MD, ND, p_grid, q_grid);
+
+    // Create HICMA descriptor for C (Dense) with lts tile size.
+    // The CHAMELEON DESCRIPTOR_C uses dts, but HICMA_dgytlr_Tile needs lts-sized tiles.
+    aData->GetDescriptorData()->SetDescriptor(common::HICMA_DESCRIPTOR, DESCRIPTOR_C, is_OOC, nullptr,
+                                              float_point, lts, lts, lts * lts, full_problem_size, full_problem_size,
+                                              0, 0, full_problem_size, full_problem_size, p_grid, q_grid);
 
     int MBUV = lts;
     int NBUV = 2 * max_rank;
@@ -225,7 +234,7 @@ T HicmaImplementation<T>::ExaGeoStatMLETile(std::unique_ptr<ExaGeoStatData<T>> &
     hicma_problem.noise = 1e-4;
     hicma_problem.ndim = 2;
 
-    hicma_problem.kernel_type = aConfigurations.GetDistanceMetric() == common::GREAT_CIRCLE_DISTANCE 
+    hicma_problem.kernel_type = aConfigurations.GetDistanceMetric() == common::GREAT_CIRCLE_DISTANCE
                                 ? STARSH_SPATIAL_MATERN2_GCD
                                 : STARSH_SPATIAL_MATERN2_SIMD;
 
@@ -233,17 +242,240 @@ T HicmaImplementation<T>::ExaGeoStatMLETile(std::unique_ptr<ExaGeoStatData<T>> &
     if (aConfigurations.GetIsNonGaussian()) {
         hicma_data_type = HICMA_STARSH_PROB_GEOSTAT_NON_GAUSSIAN;
     } else {
-        hicma_data_type = HICMA_STARSH_PROB_GEOSTAT;
+        // Use GEOSTAT_POINT to pass external coordinates from LocationGenerator.
+        // This ensures STARSH uses ExaGeoStat's ordered coordinates (e.g. graph_part)
+        // instead of internally regenerating coordinates with Morton ordering.
+        hicma_data_type = HICMA_STARSH_PROB_GEOSTAT_POINT;
     }
+
+    // Flatten locations into dimension-major layout: [x1..xN, y1..yN]
+    // as required by starsh_ssdata_init()
+    auto *locations = aData->GetLocations();
+    double *point = new double[N * hicma_problem.ndim];
+    for (int idx = 0; idx < N; idx++) {
+        point[idx] = static_cast<double>(locations->GetLocationX()[idx]);
+        point[N + idx] = static_cast<double>(locations->GetLocationY()[idx]);
+    }
+    hicma_problem.point = point;
 
     HICMA_zgenerate_problem(hicma_data_type, 'S', 0, N, lts, HICMA_descCUV->mt, HICMA_descCUV->nt,
                             &hicma_problem);
     int compress_diag = 0;
-    HICMA_dgytlr_Tile(EXAGEOSTAT_LOWER, HICMA_descCUV, HICMA_descCD, HICMA_descCrk, 0, max_rank, 
+    HICMA_dgytlr_Tile(EXAGEOSTAT_LOWER, HICMA_descCUV, HICMA_descCD, HICMA_descCrk, 0, max_rank,
                       pow(10, -1.0 * acc), compress_diag, HICMA_descC);
 
     STOP_TIMING(matrix_gen_time);
     VERBOSE("Done.")
+
+    // Extract and print TLR rank statistics
+    {
+        int mt = HICMA_descCrk->mt;
+        int nt = HICMA_descCrk->nt;
+        T *rank_matrix = (T *) HICMA_descCrk->mat;
+
+        int min_rank = INT_MAX;
+        int max_rank_val = 0;
+        double sum_rank = 0.0;
+        int count = 0;
+
+        // Iterate over lower triangular tiles (excluding diagonal)
+        for (int j = 0; j < nt; j++) {
+            for (int i = j + 1; i < mt; i++) {
+                int rank_val = (int) rank_matrix[j * mt + i];
+                if (rank_val > 0) {  // Only count non-zero ranks
+                    if (rank_val < min_rank) min_rank = rank_val;
+                    if (rank_val > max_rank_val) max_rank_val = rank_val;
+                    sum_rank += rank_val;
+                    count++;
+                }
+            }
+        }
+
+        double avg_rank = (count > 0) ? (sum_rank / count) : 0.0;
+        if (min_rank == INT_MAX) min_rank = 0;
+
+        VERBOSE("TLR Rank Statistics after compression:")
+        VERBOSE("  Min Rank: " << min_rank)
+        VERBOSE("  Max Rank: " << max_rank_val)
+        VERBOSE("  Avg Rank: " << avg_rank)
+        VERBOSE("  Number of TLR tiles: " << count)
+
+        // Store in Results for summary output
+        Results::GetInstance()->SetTLRRankStatistics(min_rank, max_rank_val, avg_rank);
+
+        // Per-distance rank distribution for analysis
+        {
+            int max_dist = mt;
+            std::vector<double> dist_sum(max_dist, 0.0);
+            std::vector<int> dist_count(max_dist, 0);
+            std::vector<int> dist_max(max_dist, 0);
+            for (int j = 0; j < nt; j++) {
+                for (int i = j + 1; i < mt; i++) {
+                    int rv = (int) rank_matrix[j * mt + i];
+                    if (rv <= 0) continue;
+                    int d = i - j;
+                    dist_sum[d] += rv;
+                    dist_count[d]++;
+                    if (rv > dist_max[d]) dist_max[d] = rv;
+                }
+            }
+            fprintf(stderr, "RANK_BY_DIST dist avg_rank max_rank count\n");
+            for (int d = 1; d < max_dist && dist_count[d] > 0; d++) {
+                fprintf(stderr, "RANK_BY_DIST %d %.2f %d %d\n",
+                        d, dist_sum[d] / dist_count[d], dist_max[d], dist_count[d]);
+            }
+        }
+
+        // η vs rank analysis: compute per-tile-pair admissibility ratio and correlate with rank
+        {
+            // Compute per-tile centroid and diameter
+            std::vector<double> tile_cx(mt, 0), tile_cy(mt, 0), tile_diam(mt, 0);
+            for (int t = 0; t < mt; t++) {
+                int tlo = t * lts, thi = std::min(tlo + lts, N);
+                double sx = 0, sy = 0;
+                for (int p = tlo; p < thi; p++) { sx += point[p]; sy += point[N + p]; }
+                int cnt = thi - tlo;
+                tile_cx[t] = sx / cnt;
+                tile_cy[t] = sy / cnt;
+                double md2 = 0;
+                for (int p = tlo; p < thi; p++)
+                    for (int q = p + 1; q < thi; q++) {
+                        double dx = point[p] - point[q], dy = point[N+p] - point[N+q];
+                        double d2 = dx*dx + dy*dy;
+                        if (d2 > md2) md2 = d2;
+                    }
+                tile_diam[t] = std::sqrt(md2);
+            }
+
+            // Output η vs rank for each tile pair
+            fprintf(stderr, "ETA_VS_RANK eta rank tile_i tile_j centroid_dist max_diam\n");
+            // Bin η into buckets for summary
+            const int nbins = 20;
+            double eta_max = 10.0;
+            std::vector<double> bin_rank_sum(nbins, 0);
+            std::vector<int> bin_count(nbins, 0);
+            int pair_count = 0;
+            for (int j = 0; j < nt; j++) {
+                for (int i = j + 1; i < mt; i++) {
+                    int rv = (int) rank_matrix[j * mt + i];
+                    if (rv <= 0) continue;
+                    double dx = tile_cx[i] - tile_cx[j], dy = tile_cy[i] - tile_cy[j];
+                    double cdist = std::sqrt(dx*dx + dy*dy);
+                    double max_d = std::max(tile_diam[i], tile_diam[j]);
+                    double eta = (cdist > 1e-15) ? max_d / cdist : 999.0;
+                    int bin = std::min((int)(eta / eta_max * nbins), nbins - 1);
+                    bin_rank_sum[bin] += rv;
+                    bin_count[bin]++;
+                    // Output all pairs
+                    if (pair_count < 99999) {
+                        fprintf(stderr, "ETA_VS_RANK %.4f %d %d %d %.4f %.4f\n",
+                                eta, rv, i, j, cdist, max_d);
+                    }
+                    pair_count++;
+                }
+            }
+            fprintf(stderr, "ETA_BINNED eta_lo eta_hi avg_rank count\n");
+            for (int b = 0; b < nbins; b++) {
+                if (bin_count[b] == 0) continue;
+                fprintf(stderr, "ETA_BINNED %.2f %.2f %.2f %d\n",
+                        b * eta_max / nbins, (b+1) * eta_max / nbins,
+                        bin_rank_sum[b] / bin_count[b], bin_count[b]);
+            }
+            // Fine-grained η bins for low-η region [0, 0.5]
+            {
+                const int fbins = 10;
+                double fmax = 0.5;
+                std::vector<double> fsum(fbins, 0);
+                std::vector<int> fcount(fbins, 0);
+                std::vector<int> fmin_r(fbins, INT_MAX), fmax_r(fbins, 0);
+                for (int j = 0; j < nt; j++) {
+                    for (int i = j + 1; i < mt; i++) {
+                        int rv = (int) rank_matrix[j * mt + i];
+                        if (rv <= 0) continue;
+                        double dx = tile_cx[i] - tile_cx[j], dy = tile_cy[i] - tile_cy[j];
+                        double cdist = std::sqrt(dx*dx + dy*dy);
+                        double max_d = std::max(tile_diam[i], tile_diam[j]);
+                        double eta = (cdist > 1e-15) ? max_d / cdist : 999.0;
+                        if (eta >= fmax) continue;
+                        int fb = std::min((int)(eta / fmax * fbins), fbins - 1);
+                        fsum[fb] += rv; fcount[fb]++;
+                        if (rv < fmin_r[fb]) fmin_r[fb] = rv;
+                        if (rv > fmax_r[fb]) fmax_r[fb] = rv;
+                    }
+                }
+                fprintf(stderr, "ETA_FINE eta_lo eta_hi avg_rank min_rank max_rank count\n");
+                for (int b = 0; b < fbins; b++) {
+                    if (fcount[b] == 0) continue;
+                    fprintf(stderr, "ETA_FINE %.3f %.3f %.2f %d %d %d\n",
+                            b * fmax / fbins, (b+1) * fmax / fbins,
+                            fsum[b] / fcount[b], fmin_r[b], fmax_r[b], fcount[b]);
+                }
+            }
+        // Graph cut analysis: build k-NN graph, count cross-tile edges per tile pair
+        {
+            const int knn = 8;
+            // For each point, find k nearest neighbors, record their tile IDs
+            // cross_cut[i*mt+j] = number of k-NN edges between tile i and tile j
+            std::vector<int> cross_cut(mt * mt, 0);
+            int total_cross = 0;
+
+            for (int p = 0; p < N; p++) {
+                int tile_p = p / lts;
+                if (tile_p >= mt) tile_p = mt - 1;
+                double px = point[p], py = point[N + p];
+
+                // Find k nearest neighbors (brute force, fine for diagnostics)
+                // Use a partial sort approach: keep top-k closest
+                struct NN { double d2; int idx; };
+                std::vector<NN> heap;
+                heap.reserve(knn + 1);
+
+                for (int q = 0; q < N; q++) {
+                    if (q == p) continue;
+                    double dx = px - point[q], dy = py - point[N + q];
+                    double d2 = dx*dx + dy*dy;
+                    if ((int)heap.size() < knn) {
+                        heap.push_back({d2, q});
+                        if ((int)heap.size() == knn)
+                            std::make_heap(heap.begin(), heap.end(), [](const NN& a, const NN& b){ return a.d2 < b.d2; });
+                    } else if (d2 < heap[0].d2) {
+                        std::pop_heap(heap.begin(), heap.end(), [](const NN& a, const NN& b){ return a.d2 < b.d2; });
+                        heap.back() = {d2, q};
+                        std::push_heap(heap.begin(), heap.end(), [](const NN& a, const NN& b){ return a.d2 < b.d2; });
+                    }
+                }
+
+                for (auto& nn : heap) {
+                    int tile_q = nn.idx / lts;
+                    if (tile_q >= mt) tile_q = mt - 1;
+                    if (tile_p != tile_q) {
+                        cross_cut[tile_p * mt + tile_q]++;
+                        total_cross++;
+                    }
+                }
+            }
+
+            // Output: per tile pair, cross_cut count vs rank
+            fprintf(stderr, "GRAPH_CUT_VS_RANK cut rank eta tile_i tile_j\n");
+            int pair_out = 0;
+            for (int j = 0; j < nt; j++) {
+                for (int i = j + 1; i < mt; i++) {
+                    int rv = (int) rank_matrix[j * mt + i];
+                    if (rv <= 0) continue;
+                    int cut = cross_cut[i * mt + j] + cross_cut[j * mt + i];
+                    double dx = tile_cx[i] - tile_cx[j], dy = tile_cy[i] - tile_cy[j];
+                    double cdist = std::sqrt(dx*dx + dy*dy);
+                    double max_d = std::max(tile_diam[i], tile_diam[j]);
+                    double eta = (cdist > 1e-15) ? max_d / cdist : 999.0;
+                    if (pair_out < 99999)
+                        fprintf(stderr, "GRAPH_CUT_VS_RANK %d %d %.4f %d %d\n", cut, rv, eta, i, j);
+                    pair_out++;
+                }
+            }
+            fprintf(stderr, "GRAPH_CUT_TOTAL %d\n", total_cross);
+        }
+        }
+    }
 
     // ******************************
     VERBOSE("LR: re-Copy z...")
@@ -377,7 +609,13 @@ T HicmaImplementation<T>::ExaGeoStatMLETile(std::unique_ptr<ExaGeoStatData<T>> &
 
     aConfigurations.SetEstimatedTheta(aConfigurations.GetStartingTheta());
     // Due to a leak in HiCMA in ZGEMM, We had to free the buffer manually.
+#ifdef USE_MKL
     mkl_free_buffers();
+#endif
+
+    // Free coordinate array passed to STARSH via hicma_problem.point.
+    // Must outlive all STARSH operations (starsh_ssdata_init stores pointer, not copy).
+    delete[] point;
 
     return loglik;
 }

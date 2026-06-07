@@ -289,6 +289,13 @@ namespace exageostat::configurations {
         CREATE_SETTER_FUNCTION(LongitudeCount, int, aLonCount, "lon")
         CREATE_GETTER_FUNCTION(LongitudeCount, int, "lon")
 
+        // Optional clustering controls
+        CREATE_SETTER_FUNCTION(ClusteringMode, const std::string&, aMode, "clusteringmode")
+        CREATE_GETTER_FUNCTION(ClusteringMode, std::string, "clusteringmode")
+
+        CREATE_SETTER_FUNCTION(LocationsFile, const std::string&, aLocationsFile, "locationsfile")
+        CREATE_GETTER_FUNCTION(LocationsFile, std::string, "locationsfile")
+
 /** END OF THE DATA GENERATION MODULES. **/
 /** START OF THE DATA MODELING MODULES. **/
 

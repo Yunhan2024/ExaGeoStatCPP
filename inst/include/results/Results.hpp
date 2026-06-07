@@ -282,6 +282,38 @@ namespace exageostat::results {
         void SetPredictedMissedValues(std::vector<double> aPredictedValues, const std::string &aKey = "");
 
         /**
+         * @brief Set the TLR rank statistics (min, max, avg).
+         * @param[in] aMinRank Minimum rank among all TLR tiles.
+         * @param[in] aMaxRank Maximum rank among all TLR tiles.
+         * @param[in] aAvgRank Average rank among all TLR tiles.
+         * @param[in] aKeyMin Custom dictionary key for min rank (optional).
+         * @param[in] aKeyMax Custom dictionary key for max rank (optional).
+         * @param[in] aKeyAvg Custom dictionary key for avg rank (optional).
+         */
+        void SetTLRRankStatistics(int aMinRank, int aMaxRank, double aAvgRank,
+                                  const std::string &aKeyMin = "",
+                                  const std::string &aKeyMax = "",
+                                  const std::string &aKeyAvg = "");
+
+        /**
+         * @brief Get the minimum TLR rank.
+         * @return The minimum TLR rank.
+         */
+        [[nodiscard]] int GetTLRMinRank() const;
+
+        /**
+         * @brief Get the maximum TLR rank.
+         * @return The maximum TLR rank.
+         */
+        [[nodiscard]] int GetTLRMaxRank() const;
+
+        /**
+         * @brief Get the average TLR rank.
+         * @return The average TLR rank.
+         */
+        [[nodiscard]] double GetTLRAvgRank() const;
+
+        /**
          * @brief Print the end summary of the results.
          *
          */
@@ -353,6 +385,12 @@ namespace exageostat::results {
         std::vector<double> mFisherMatrix;
         /// Z miss values
         std::vector<double> mPredictedMissedValues;
+        /// TLR minimum rank
+        int mTLRMinRank = 0;
+        /// TLR maximum rank
+        int mTLRMaxRank = 0;
+        /// TLR average rank
+        double mTLRAvgRank = 0.0;
         /// Map that holds results
         std::map<std::string, std::string> mSummaryDictionary;
     };

@@ -17,7 +17,8 @@ set(tag "v3.11.2")
 # 'version' sets "3.11.2" as the version of the nlohmann library, ensuring compatibility with project requirements.
 set(version "3.11.2")
 # 'flag' is available for additional configuration options during build or installation, but remains empty here.
-set(flag "")
+# Disable building nlohmann_json tests to speed up and avoid allocator test failures
+set(flag "-DJSON_BuildTests=OFF")
 # 'is_cmake' indicates whether nlohmann uses CMake for building.
 set(is_cmake ON)
 # 'is_git' denotes if nlohmann's source code is hosted in a Git repository.

@@ -26,6 +26,7 @@ const unordered_map<string, function<any(const string &)>> Validator::mCheckersM
         {"FileHandler",    [](const string &value) -> any { return CheckLogFileValue(value); }},
         {"Bool",           [](const string &value) -> any { return CheckBoolValue(value); }},
         {"Numerical",      [](const string &value) -> any { return CheckNumericalValue(value); }},
+        {"ClusteringMode", [](const string &value) -> any { return CheckClusteringModeValue(value); }},
         {"Dimension",      [](const string &value) -> any { return CheckDimensionValue(value); }},
         {"DistanceMetric", [](const string &value) -> any { return CheckDistanceMetricValue(value); }},
         {"Kernel",         [](const string &value) -> any { return CheckKernelValue(value); }},
@@ -71,6 +72,8 @@ const std::unordered_map<std::string, std::string> Validator::mArgumentToCategor
         {"banddense",         "Numerical"},
         {"banddensehp",       "Numerical"},
         {"objectsnumber",     "Numerical"},
+        {"clusteringmode",  "ClusteringMode"},
+        {"locationsfile",   "Path"},
         {"adaptivedecision",  "Numerical"},
         {"adddiagonal",       "Numerical"},
         {"filetimeslot",      "Numerical"},
@@ -297,6 +300,15 @@ double Validator::CheckToleranceValue(const string &aTolerancePower) {
 
     auto val = Validator::CheckNumericalValue(aTolerancePower);
     return pow(10, -1 * val);
+}
+
+std::string Validator::CheckClusteringModeValue(const std::string &aMode) {
+    std::string lower = aMode;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    if (lower == "none" || lower == "graph_part") {
+        return lower;
+    }
+    throw range_error("Invalid clustering mode. Please use none or graph_part.");
 }
 
 FILE *Validator::CheckLogFileValue(const std::string &apFileLogPath) {

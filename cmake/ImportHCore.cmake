@@ -18,7 +18,7 @@ set(tag "v0.1.3")
 # 'version' indicates the version of the HCORE library, used to ensure compatibility or fulfill certain requirements.
 set(version "0.1.3")
 # 'flag' is intended for passing additional flags to the configure/make commands during the building of the dependency, but is left empty here.
-set(flag "")
+set(flag "-DHCORE_TESTING=OFF")
 # 'is_cmake' is a boolean flag that denotes whether the HCORE library utilizes CMake for its build process. Here, it's set to ON.
 set(is_cmake ON)
 # 'is_git' is a boolean flag that signifies if the source code for HCORE is maintained in a git repository. This is set to ON.
