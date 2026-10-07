@@ -13,7 +13,9 @@
  * @date 2024-02-04
  **/
 
+#ifdef USE_MKL
 #include <mkl_service.h>
+#endif
 
 #ifdef USE_MPI
 #include <mpi.h>
@@ -68,9 +70,15 @@ void HicmaImplementation<T>::SetModelingDescriptors(std::unique_ptr<ExaGeoStatDa
                                               0, 0, full_problem_size, 1, p_grid, q_grid);
 #endif
 
-    aData->GetDescriptorData()->SetDescriptor(common::HICMA_DESCRIPTOR, DESCRIPTOR_CD, is_OOC, nullptr, 
-                                              float_point, MBD, NBD, MBD * NBD, MD, ND, 
+    aData->GetDescriptorData()->SetDescriptor(common::HICMA_DESCRIPTOR, DESCRIPTOR_CD, is_OOC, nullptr,
+                                              float_point, MBD, NBD, MBD * NBD, MD, ND,
                                               0, 0, MD, ND, p_grid, q_grid);
+
+    // HICMA_dgytlr_Tile needs a dense C descriptor with lts-sized tiles; the Chameleon one uses dts.
+    aData->GetDescriptorData()->SetDescriptor(common::HICMA_DESCRIPTOR, DESCRIPTOR_C, is_OOC, nullptr,
+                                              float_point, lts, lts, lts * lts, full_problem_size,
+                                              full_problem_size, 0, 0, full_problem_size, full_problem_size,
+                                              p_grid, q_grid);
 
     int MBUV = lts;
     int NBUV = 2 * max_rank;
@@ -233,8 +241,19 @@ T HicmaImplementation<T>::ExaGeoStatMLETile(std::unique_ptr<ExaGeoStatData<T>> &
     if (aConfigurations.GetIsNonGaussian()) {
         hicma_data_type = HICMA_STARSH_PROB_GEOSTAT_NON_GAUSSIAN;
     } else {
-        hicma_data_type = HICMA_STARSH_PROB_GEOSTAT;
+        // GEOSTAT_POINT makes STARSH use ExaGeoStat's (possibly reordered) locations instead of
+        // regenerating its own Morton-ordered points.
+        hicma_data_type = HICMA_STARSH_PROB_GEOSTAT_POINT;
     }
+
+    // STARSH expects dimension-major coordinates [x1..xN, y1..yN] and keeps the pointer.
+    auto *locations = aData->GetLocations();
+    double *point = new double[N * hicma_problem.ndim];
+    for (int idx = 0; idx < N; idx++) {
+        point[idx] = static_cast<double>(locations->GetLocationX()[idx]);
+        point[N + idx] = static_cast<double>(locations->GetLocationY()[idx]);
+    }
+    hicma_problem.point = point;
 
     HICMA_zgenerate_problem(hicma_data_type, 'S', 0, N, lts, HICMA_descCUV->mt, HICMA_descCUV->nt,
                             &hicma_problem);
@@ -377,7 +396,12 @@ T HicmaImplementation<T>::ExaGeoStatMLETile(std::unique_ptr<ExaGeoStatData<T>> &
 
     aConfigurations.SetEstimatedTheta(aConfigurations.GetStartingTheta());
     // Due to a leak in HiCMA in ZGEMM, We had to free the buffer manually.
+#ifdef USE_MKL
     mkl_free_buffers();
+#endif
+
+    // The coordinate array is referenced by STARSH until the end of this evaluation.
+    delete[] point;
 
     return loglik;
 }
