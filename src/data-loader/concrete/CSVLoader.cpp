@@ -13,8 +13,10 @@
 **/
 
 #include <fstream>
+#include <numeric>
 
 #include <data-loader/concrete/CSVLoader.hpp>
+#include <data-generators/LocationGenerator.hpp>
 
 using namespace std;
 
@@ -267,9 +269,25 @@ CSVLoader<T>::LoadData(configurations::Configurations &aConfigurations, exageost
             data->GetLocations()->GetLocationZ()[i] = z_locations[i];
         }
     }
+    // Reorder univariate data so that each measurement follows its location.
+    std::vector<int> order(aConfigurations.GetProblemSize());
+    std::iota(order.begin(), order.end(), 0);
+    if (aConfigurations.GetDimension() != DimensionST && p == 1) {
+        if (aConfigurations.GetOrdering() == "minbbox") {
+            int tile_size = aConfigurations.GetComputation() == TILE_LOW_RANK ? aConfigurations.GetLowTileSize()
+                                                                               : aConfigurations.GetDenseTileSize();
+            order = generators::LocationGenerator<T>::ApplyMinBBoxOrdering(aConfigurations.GetProblemSize(),
+                                                                            aConfigurations.GetDimension(),
+                                                                            *data->GetLocations(), tile_size);
+        } else {
+            order = generators::LocationGenerator<T>::ApplyMortonOrdering(aConfigurations.GetProblemSize(),
+                                                                           aConfigurations.GetDimension(),
+                                                                           *data->GetLocations());
+        }
+    }
     for (int i = 0; i < aConfigurations.GetProblemSize(); i++) {
         ((T *) data->GetDescriptorData()->GetDescriptor(CHAMELEON_DESCRIPTOR,
-                                                        DESCRIPTOR_Z).chameleon_desc->mat)[i] = measurements_vector[i];
+                                                        DESCRIPTOR_Z).chameleon_desc->mat)[i] = measurements_vector[order[i]];
     }
 
     Results::GetInstance()->SetGeneratedLocationsNumber(aConfigurations.GetProblemSize() / p);

@@ -115,6 +115,14 @@ namespace exageostat::configurations::validator {
         static common::DistanceMetric CheckDistanceMetricValue(const std::string &aDistanceMetric);
 
         /**
+         * @brief Validates the spatial ordering applied to the locations.
+         * @param[in] aOrdering The input string, either "morton" or "minbbox".
+         * @return The validated ordering name in lower case.
+         *
+         */
+        static std::string CheckOrderingValue(const std::string &aOrdering);
+
+        /**
          * @brief Validates and converts a string into an integer.
          * @param[in] aValue The input string representing a numerical value.
          * @return The validated integer value.
