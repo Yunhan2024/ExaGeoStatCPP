@@ -144,7 +144,8 @@ void Configurations::ValidateConfiguration() {
     if (mDictionary.find("tolerance") == mDictionary.end()) {
         SetTolerance(8);
     }
-     if (GetDataPath().empty()) {
+    // A data path is only needed when the data is loaded rather than generated.
+    if (!GetIsSynthetic() && GetDataPath().empty()) {
         throw domain_error("You need to set the data path, before starting");
     }
 #else
