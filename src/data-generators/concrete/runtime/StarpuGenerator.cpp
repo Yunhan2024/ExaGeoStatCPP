@@ -49,6 +49,11 @@ StarpuGenerator<T>::CreateSyntheticData(Configurations &aConfigurations, exageos
     // Generate Locations phase
     LocationGenerator<T>::GenerateLocations(n, aConfigurations.GetTimeSlot(), aConfigurations.GetDimension(),
                                             *locations);
+    if (aConfigurations.GetOrdering() == "minbbox" && aConfigurations.GetDimension() != DimensionST) {
+        int tile_size = aConfigurations.GetComputation() == TILE_LOW_RANK ? aConfigurations.GetLowTileSize()
+                                                                           : aConfigurations.GetDenseTileSize();
+        LocationGenerator<T>::ApplyMinBBoxOrdering(n, aConfigurations.GetDimension(), *locations, tile_size);
+    }
     data->SetLocations(*locations);
 
     // Generate Descriptors phase

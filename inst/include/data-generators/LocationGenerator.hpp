@@ -14,6 +14,8 @@
 #ifndef EXAGEOSTATCPP_LOCATIONGENERATOR_HPP
 #define EXAGEOSTATCPP_LOCATIONGENERATOR_HPP
 
+#include <vector>
+
 #include <data-units/Locations.hpp>
 
 namespace exageostat::generators {
@@ -61,6 +63,37 @@ namespace exageostat::generators {
          */
         static void
         SortLocations(const int &aN, const common::Dimension &aDimension, dataunits::Locations<T> &aLocations);
+
+        /**
+         * @brief Reorders locations with min-bounding-box recursive bisection (min-bbox).
+         * @details The locations are split recursively into tile-aligned halves. Each split is taken across the
+         * longer side of the bounding box, at the tile-aligned position near the middle that minimizes the sum of
+         * the bounding-box diagonals of the two halves. Halves are visited in space-filling-curve order of their
+         * centroids, and the points inside a tile follow the same curve. Compact, well-separated tiles reduce
+         * the ranks of off-diagonal tiles in tile low-rank computations.
+         * @param[in] aN The number of locations.
+         * @param[in] aDimension Dimension of locations (2D or 3D; space-time locations are not reordered).
+         * @param[in,out] aLocations Locations to be reordered in place.
+         * @param[in] aTileSize Number of locations per tile.
+         * @return The permutation applied: new position i holds the location previously at position result[i].
+         *
+         */
+        static std::vector<int>
+        ApplyMinBBoxOrdering(const int &aN, const common::Dimension &aDimension, dataunits::Locations<T> &aLocations,
+                             const int &aTileSize);
+
+        /**
+         * @brief Reorders locations along the Morton (Z-order) curve without altering coordinate values.
+         * @details Unlike SortLocations, which re-encodes coordinates on a 16-bit grid, this keeps the original
+         * values, which is required for loaded data whose measurements must follow their locations.
+         * @param[in] aN The number of locations.
+         * @param[in] aDimension Dimension of locations (2D or 3D; space-time locations are not reordered).
+         * @param[in,out] aLocations Locations to be reordered in place.
+         * @return The permutation applied: new position i holds the location previously at position result[i].
+         *
+         */
+        static std::vector<int>
+        ApplyMortonOrdering(const int &aN, const common::Dimension &aDimension, dataunits::Locations<T> &aLocations);
     };
 
     /**

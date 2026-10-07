@@ -11,6 +11,8 @@
  * @date 2024-12-11
 **/
 
+#include <algorithm>
+
 #include <nlohmann/json.hpp>
 
 #include <utilities/Logger.hpp>
@@ -28,6 +30,7 @@ const unordered_map<string, function<any(const string &)>> Validator::mCheckersM
         {"Numerical",      [](const string &value) -> any { return CheckNumericalValue(value); }},
         {"Dimension",      [](const string &value) -> any { return CheckDimensionValue(value); }},
         {"DistanceMetric", [](const string &value) -> any { return CheckDistanceMetricValue(value); }},
+        {"Ordering",       [](const string &value) -> any { return CheckOrderingValue(value); }},
         {"Kernel",         [](const string &value) -> any { return CheckKernelValue(value); }},
         {"Verbose",        [](const string &value) -> any { return CheckVerboseValue(value); }},
         {"Precision",      [](const string &value) -> any { return CheckPrecisionValue(value); }},
@@ -98,6 +101,7 @@ const std::unordered_map<std::string, std::string> Validator::mArgumentToCategor
         {"isclimateemulator", "Bool"},
         {"recoveryfile",      "Path"},
         {"distancemetric",    "DistanceMetric"},
+        {"ordering",          "Ordering"},
         {"maxmleiterations",  "Numerical"},
         {"accuracy",          "Numerical"},
         {"tolerance",         "Tolerance"},
@@ -291,6 +295,16 @@ DistanceMetric Validator::CheckDistanceMetricValue(const string &aDistanceMetric
     } else {
         throw range_error("Invalid value. Please use eg or gcd values only.");
     }
+}
+
+string Validator::CheckOrderingValue(const string &aOrdering) {
+
+    string ordering = aOrdering;
+    transform(ordering.begin(), ordering.end(), ordering.begin(), ::tolower);
+    if (ordering != "morton" && ordering != "minbbox") {
+        throw range_error("Invalid value for Ordering. Please use morton or minbbox.");
+    }
+    return ordering;
 }
 
 double Validator::CheckToleranceValue(const string &aTolerancePower) {
