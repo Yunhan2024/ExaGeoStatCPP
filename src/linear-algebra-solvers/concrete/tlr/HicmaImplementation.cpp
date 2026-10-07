@@ -17,6 +17,10 @@
 #include <mkl_service.h>
 #endif
 
+#include <algorithm>
+#include <iomanip>
+#include <sstream>
+
 #ifdef USE_MPI
 #include <mpi.h>
 #endif
@@ -264,6 +268,31 @@ T HicmaImplementation<T>::ExaGeoStatMLETile(std::unique_ptr<ExaGeoStatData<T>> &
     STOP_TIMING(matrix_gen_time);
     VERBOSE("Done.")
 
+#ifndef USE_MPI
+    // Off-diagonal tile ranks, the quantity a spatial ordering changes. descCrk holds the compression ranks
+    // here and is updated in place by the factorization.
+    auto off_diagonal_ranks = [&]() {
+        auto *ranks = (T *) HICMA_descCrk->mat;
+        int mt = HICMA_descCrk->mt;
+        double sum = 0, sum_squares = 0;
+        int maximum = 0, count = 0;
+        for (int j = 0; j < HICMA_descCrk->nt; j++) {
+            for (int i = j + 1; i < mt; i++) {
+                int rank = (int) ranks[j * mt + i];
+                sum += rank;
+                sum_squares += (double) rank * rank;
+                maximum = std::max(maximum, rank);
+                count++;
+            }
+        }
+        std::ostringstream summary;
+        summary << std::fixed << "avg " << std::setprecision(2) << (count ? sum / count : 0.0) << ", max " << maximum
+                << ", sum of squares " << std::setprecision(0) << sum_squares;
+        return summary.str();
+    };
+    std::string compression_ranks = off_diagonal_ranks();
+#endif
+
     // ******************************
     VERBOSE("LR: re-Copy z...")
     START_TIMING(test_time);
@@ -281,6 +310,10 @@ T HicmaImplementation<T>::ExaGeoStatMLETile(std::unique_ptr<ExaGeoStatData<T>> &
     STOP_TIMING(time_facto);
     flops = flops + flops_dpotrf(N);
     VERBOSE("Done.")
+#ifndef USE_MPI
+    LOGGER("Off-diagonal TLR ranks | after compression: " << compression_ranks
+           << " | after factorization: " << off_diagonal_ranks())
+#endif
 
     // Calculate log(|C|) --> log(square(|L|))
     VERBOSE("LR:Calculating the log determinant ...")

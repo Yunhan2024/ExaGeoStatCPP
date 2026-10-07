@@ -186,6 +186,21 @@ int main(int argc, char **argv) {
     return 0;
 }
 ```
+
+#### Spatial ordering (`--ordering`)
+Locations can be reordered before the covariance matrix is built: `--ordering=morton` (default) or
+`--ordering=minbbox`. min-bbox recursively bisects the locations into tile-aligned halves, cutting across the
+longer side of the bounding box at the position that keeps both halves most compact, so that off-diagonal tiles
+compress to lower ranks in TLR. It applies to synthetic and loaded univariate 2D/3D data; with TLR it uses `--lts`
+as the tile size, otherwise `--dts`.
+
+To compare both orderings on the same problem (off-diagonal TLR ranks and modeling time, median of 3 runs each):
+```commandline
+scripts/compare_ordering.sh                       # small synthetic TLR problem
+scripts/compare_ordering.sh --N=48000 --lts=2000 --dts=2000 --computation=tlr --kernel=UnivariateMaternStationary \
+  --dimension=2D --issynthetic=false --datapath=data.csv --maxrank=500 --accuracy=7 \
+  --initial_theta=1:0.1:0.5 --estimated_theta=1:0.1:0.5 --lb=0.05:0.005:0.15 --ub=3:0.5:2 --max_mle_iterations=1
+```
 ## R Example
 Here is an example demonstrating how to use **ExaGeoStatCPP** in R:
 
