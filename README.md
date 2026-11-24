@@ -201,6 +201,26 @@ scripts/compare_ordering.sh --N=48000 --lts=2000 --dts=2000 --computation=tlr --
   --dimension=2D --issynthetic=false --datapath=data.csv --maxrank=500 --accuracy=7 \
   --initial_theta=1:0.1:0.5 --estimated_theta=1:0.1:0.5 --lb=0.05:0.005:0.15 --ub=3:0.5:2 --max_mle_iterations=1
 ```
+
+##### Orderings computed outside ExaGeoStat: QSR and ShortSeam (`--ordering=file`)
+`--ordering=file --ordering_file=PATH` applies a permutation read from a file. Two tile-aware orderings, QSR and
+ShortSeam, are provided as Python tools in `tools/ordering` (they need only `numpy` and `scipy`). Both are 2D, and
+the number of locations must be a multiple of the tile size. For loaded data:
+```commandline
+(echo x,y; cut -d, -f1,2 data.csv) > locations.csv   # header line, then one x,y row per location in file order
+python3 tools/ordering/qsr.py       locations.csv qsr.order       --tile 2000   # --tile is the TLR tile size (--lts)
+python3 tools/ordering/shortseam.py locations.csv shortseam.order --tile 2000
+
+bin/examples/end-to-end/Example_Data_Generation_and_Modeling --N=48000 --lts=2000 --dts=2000 --computation=tlr \
+  --kernel=UnivariateMaternStationary --dimension=2D --issynthetic=false --datapath=data.csv --maxrank=500 \
+  --accuracy=7 --initial_theta=1:0.1:0.5 --estimated_theta=1:0.1:0.5 --lb=0.05:0.005:0.15 --ub=3:0.5:2 \
+  --max_mle_iterations=1 --ordering=file --ordering_file=qsr.order
+```
+A TLR run in a build without MPI prints the off-diagonal TLR ranks, so the same command with `--ordering=morton`,
+`--ordering=minbbox` and each permutation file compares the orderings on the same data. For synthetic data the permutation must be
+computed from the locations in generation order for the same `--N` and `--seed`; ExaGeoStat stops with an error
+if the permutation was made for another point set or row order. See [tools/ordering/README.md](tools/ordering/README.md)
+for the methods, the permutation file format, the QUBO and D-Wave options of QSR, the checks done and the limits.
 ## R Example
 Here is an example demonstrating how to use **ExaGeoStatCPP** in R:
 
