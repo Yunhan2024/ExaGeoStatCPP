@@ -1,0 +1,4 @@
+numpy
+scipy
+# only for qsr.py --solver qpu|sa
+# dwave-ocean-sdk
