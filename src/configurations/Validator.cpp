@@ -102,6 +102,7 @@ const std::unordered_map<std::string, std::string> Validator::mArgumentToCategor
         {"recoveryfile",      "Path"},
         {"distancemetric",    "DistanceMetric"},
         {"ordering",          "Ordering"},
+        {"orderingfile",      "Path"},
         {"maxmleiterations",  "Numerical"},
         {"accuracy",          "Numerical"},
         {"tolerance",         "Tolerance"},
@@ -301,8 +302,8 @@ string Validator::CheckOrderingValue(const string &aOrdering) {
 
     string ordering = aOrdering;
     transform(ordering.begin(), ordering.end(), ordering.begin(), ::tolower);
-    if (ordering != "morton" && ordering != "minbbox") {
-        throw range_error("Invalid value for Ordering. Please use morton or minbbox.");
+    if (ordering != "morton" && ordering != "minbbox" && ordering != "file") {
+        throw range_error("Invalid value for Ordering. Please use morton, minbbox or file.");
     }
     return ordering;
 }

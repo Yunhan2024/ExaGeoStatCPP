@@ -47,8 +47,14 @@ StarpuGenerator<T>::CreateSyntheticData(Configurations &aConfigurations, exageos
     aConfigurations.SetInitialTheta(aConfigurations.GetInitialTheta());
 
     // Generate Locations phase
+    // --ordering=file refers to the locations in generation order, so they are not Morton-sorted first.
+    const bool from_file = aConfigurations.GetOrdering() == "file" && aConfigurations.GetDimension() != DimensionST;
     LocationGenerator<T>::GenerateLocations(n, aConfigurations.GetTimeSlot(), aConfigurations.GetDimension(),
-                                            *locations);
+                                            *locations, !from_file);
+    if (from_file) {
+        LocationGenerator<T>::ApplyFileOrdering(n, aConfigurations.GetDimension(), *locations,
+                                                aConfigurations.GetOrderingFile());
+    }
     if (aConfigurations.GetOrdering() == "minbbox" && aConfigurations.GetDimension() != DimensionST) {
         int tile_size = aConfigurations.GetComputation() == TILE_LOW_RANK ? aConfigurations.GetLowTileSize()
                                                                            : aConfigurations.GetDenseTileSize();

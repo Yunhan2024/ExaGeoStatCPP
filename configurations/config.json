@@ -44,6 +44,7 @@
   "FileLogName": "logs.log",
   "DistanceMetric": "euclidean",
   "Ordering": "morton",
+  "OrderingFile": "",
   "MaxMleIterations": "1",
   "Accuracy": "0",
   "Tolerance": "1",

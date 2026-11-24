@@ -116,7 +116,7 @@ namespace exageostat::configurations::validator {
 
         /**
          * @brief Validates the spatial ordering applied to the locations.
-         * @param[in] aOrdering The input string, either "morton" or "minbbox".
+         * @param[in] aOrdering The input string: "morton", "minbbox" or "file".
          * @return The validated ordering name in lower case.
          *
          */

@@ -306,6 +306,9 @@ namespace exageostat::configurations {
         CREATE_SETTER_FUNCTION(Ordering, const std::string&, aOrdering, "ordering")
         CREATE_GETTER_FUNCTION(Ordering, std::string, "ordering")
 
+        CREATE_SETTER_FUNCTION(OrderingFile, const std::string&, aOrderingFile, "orderingfile")
+        CREATE_GETTER_FUNCTION(OrderingFile, std::string, "orderingfile")
+
         CREATE_SETTER_FUNCTION(MaxMleIterations, int, aMaxMleIterations, "maxmleiterations")
         CREATE_GETTER_FUNCTION(MaxMleIterations, int, "maxmleiterations")
 

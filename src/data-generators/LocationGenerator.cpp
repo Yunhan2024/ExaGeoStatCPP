@@ -13,8 +13,11 @@
 
 #include <cmath>
 #include <algorithm>
+#include <fstream>
 #include <limits>
 #include <numeric>
+#include <sstream>
+#include <stdexcept>
 
 #include <data-generators/LocationGenerator.hpp>
 #include <helpers/ByteHandler.hpp>
@@ -26,7 +29,7 @@ using namespace exageostat::helpers;
 
 template<typename T>
 void LocationGenerator<T>::GenerateLocations(const int &aN, const int &aTimeSlot, const Dimension &aDimension,
-                                             Locations<T> &aLocations) {
+                                             Locations<T> &aLocations, const bool &aSort) {
 
     aLocations.SetSize(aN);
     int index = 0;
@@ -73,7 +76,9 @@ void LocationGenerator<T>::GenerateLocations(const int &aN, const int &aTimeSlot
     }
     delete[] grid;
     if (aDimension != DimensionST) {
-        SortLocations(aN, aDimension, aLocations);
+        if (aSort) {
+            SortLocations(aN, aDimension, aLocations);
+        }
     } else {
         for (auto i = 0; i < aN; i++) {
             aLocations.GetLocationX()[i] = aLocations.GetLocationX()[i];
@@ -347,5 +352,88 @@ LocationGenerator<T>::ApplyMortonOrdering(const int &aN, const Dimension &aDimen
     }
     std::stable_sort(order.begin(), order.end(), [&](int a, int b) { return codes[a] < codes[b]; });
     WritePoints(points, order, aLocations);
+    return order;
+}
+
+template<typename T>
+std::vector<int>
+LocationGenerator<T>::ApplyFileOrdering(const int &aN, const Dimension &aDimension, Locations<T> &aLocations,
+                                        const std::string &aPath) {
+
+    std::vector<int> order(aN);
+    std::iota(order.begin(), order.end(), 0);
+    if (aDimension == DimensionST) {
+        return order;
+    }
+
+    std::ifstream file(aPath);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open ordering file " + aPath);
+    }
+    const int dims = aDimension == Dimension3D ? 3 : 2;
+    T *axes[3] = {aLocations.GetLocationX(), aLocations.GetLocationY(), aLocations.GetLocationZ()};
+    std::vector<long long> values;
+    std::string line;
+    while (std::getline(file, line)) {
+        std::istringstream fields(line);
+        std::string head;
+        if (!(fields >> head)) {
+            continue;
+        }
+        if (head[0] != '#') {
+            values.push_back(std::stoll(head));
+            continue;
+        }
+        std::string key;
+        fields >> key;
+        if (key == "n") {
+            long long n;
+            if (fields >> n && n != aN) {
+                throw std::runtime_error("Ordering file " + aPath + " is for " + std::to_string(n) +
+                                         " locations, but there are " + std::to_string(aN));
+            }
+        } else if (key == "coordsum" || key == "coordwsum") {
+            // The permutation refers to the locations in generation (or file) order. coordsum rejects another
+            // point set (seed, size); coordwsum weights row i by (i + 1) / n and also rejects the same points in
+            // another row order (e.g. Morton-sorted).
+            const bool weighted = key == "coordwsum";
+            for (int d = 0; d < dims; d++) {
+                double expected;
+                if (!(fields >> expected)) {
+                    break;
+                }
+                double sum = 0;
+                for (int i = 0; i < aN; i++) {
+                    sum += (weighted ? (i + 1.0) / aN : 1.0) * static_cast<double>(axes[d][i]);
+                }
+                const double tol = sizeof(T) == sizeof(float) ? 1e-5 : 1e-9;
+                if (std::abs(sum - expected) > tol * std::max(1.0, std::abs(expected))) {
+                    throw std::runtime_error("Ordering file " + aPath + (weighted
+                                             ? " was made for these locations in a different row order"
+                                             : " was made for a different point set (coordinate sums differ)"));
+                }
+            }
+        }
+    }
+    if (static_cast<long long>(values.size()) != aN) {
+        throw std::runtime_error("Ordering file " + aPath + " has " + std::to_string(values.size()) +
+                                 " indices, expected " + std::to_string(aN));
+    }
+    std::vector<char> seen(aN, 0);
+    for (int i = 0; i < aN; i++) {
+        if (values[i] < 0 || values[i] >= aN || seen[values[i]]) {
+            throw std::runtime_error("Ordering file " + aPath + " is not a permutation of 0.." + std::to_string(aN - 1));
+        }
+        seen[values[i]] = 1;
+        order[i] = static_cast<int>(values[i]);
+    }
+
+    std::vector<T> copy(aN);
+    for (int d = 0; d < dims; d++) {
+        for (int i = 0; i < aN; i++) {
+            copy[i] = axes[d][order[i]];
+        }
+        std::copy(copy.begin(), copy.end(), axes[d]);
+    }
     return order;
 }

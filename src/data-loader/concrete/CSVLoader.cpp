@@ -273,7 +273,12 @@ CSVLoader<T>::LoadData(configurations::Configurations &aConfigurations, exageost
     std::vector<int> order(aConfigurations.GetProblemSize());
     std::iota(order.begin(), order.end(), 0);
     if (aConfigurations.GetDimension() != DimensionST && p == 1) {
-        if (aConfigurations.GetOrdering() == "minbbox") {
+        if (aConfigurations.GetOrdering() == "file") {
+            order = generators::LocationGenerator<T>::ApplyFileOrdering(aConfigurations.GetProblemSize(),
+                                                                         aConfigurations.GetDimension(),
+                                                                         *data->GetLocations(),
+                                                                         aConfigurations.GetOrderingFile());
+        } else if (aConfigurations.GetOrdering() == "minbbox") {
             int tile_size = aConfigurations.GetComputation() == TILE_LOW_RANK ? aConfigurations.GetLowTileSize()
                                                                                : aConfigurations.GetDenseTileSize();
             order = generators::LocationGenerator<T>::ApplyMinBBoxOrdering(aConfigurations.GetProblemSize(),

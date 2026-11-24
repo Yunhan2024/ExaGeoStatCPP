@@ -47,6 +47,7 @@ Configurations::Configurations() {
     SetApproximationMode(1);
     SetActualObservationsFilePath("");
     SetRecoveryFile("");
+    SetOrderingFile("");
     SetPrecision(DOUBLE);
     SetIsMSPE(false);
     SetIsFisher(false);
@@ -154,6 +155,10 @@ void Configurations::ValidateConfiguration() {
     }
 #endif
 
+    if (GetOrdering() == "file" && GetOrderingFile().empty()) {
+        throw domain_error("You need to set the ordering file (--ordering_file) when --ordering=file");
+    }
+
     size_t found = GetKernelName().find("NonGaussian");
     // Check if the substring was found
     if (found != std::string::npos) {
@@ -238,7 +243,8 @@ void Configurations::PrintUsage() {
     LOGGER("--verbose=value : Run mode whether quiet/standard/detailed.")
     LOGGER("--log_path=value : Path to log file.")
     LOGGER("--distance_metric=value : Used distance metric either eg or gcd.")
-    LOGGER("--ordering=value : Spatial ordering of 2D/3D locations (synthetic and loaded univariate data), morton (default) or minbbox.")
+    LOGGER("--ordering=value : Spatial ordering of 2D/3D locations (synthetic and loaded univariate data), morton (default), minbbox or file.")
+    LOGGER("--ordering_file=value : Permutation for --ordering=file (one zero-based location index per line, made by tools/ordering).")
     LOGGER("--max_mle_iterations=value : Maximum number of MLE iterations.")
     LOGGER("--tolerance : MLE tolerance between two iterations.")
     LOGGER("--data_path : Used to enter the path to the real data file.")

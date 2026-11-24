@@ -14,6 +14,7 @@
 #ifndef EXAGEOSTATCPP_LOCATIONGENERATOR_HPP
 #define EXAGEOSTATCPP_LOCATIONGENERATOR_HPP
 
+#include <string>
 #include <vector>
 
 #include <data-units/Locations.hpp>
@@ -38,11 +39,13 @@ namespace exageostat::generators {
          * @param[in] aTimeSlot The time slot.
          * @param[in] aDimension The dimension of the locations.
          * @param[out] aLocations Reference to the Locations object where the generated data will be stored.
+         * @param[in] aSort Sort 2D/3D locations along the Morton curve (default). When false, the locations keep
+         * their generation order and full precision, which is the row order that --ordering=file refers to.
          * @return void
          *
          */
         static void GenerateLocations(const int &aN, const int &aTimeSlot, const common::Dimension &aDimension,
-                                      dataunits::Locations<T> &aLocations);
+                                      dataunits::Locations<T> &aLocations, const bool &aSort = true);
 
         /**
          * @brief Generate uniform distribution between rangeLow , rangeHigh.
@@ -94,6 +97,23 @@ namespace exageostat::generators {
          */
         static std::vector<int>
         ApplyMortonOrdering(const int &aN, const common::Dimension &aDimension, dataunits::Locations<T> &aLocations);
+
+        /**
+         * @brief Reorders locations with a permutation read from a file (e.g. QSR or ShortSeam from tools/ordering).
+         * @details One zero-based location index per line; new position i holds the location previously at
+         * position result[i]. Lines starting with '#' are comments; "# n <N>", "# coordsum <sx> <sy> [<sz>]" and
+         * "# coordwsum ..." (sums weighted by (i + 1) / n) headers, when present, are checked against the
+         * locations, so that a permutation made for another point set or another row order is rejected.
+         * @param[in] aN The number of locations.
+         * @param[in] aDimension Dimension of locations (2D or 3D; space-time locations are not reordered).
+         * @param[in,out] aLocations Locations to be reordered in place.
+         * @param[in] aPath Path of the permutation file.
+         * @return The permutation applied: new position i holds the location previously at position result[i].
+         *
+         */
+        static std::vector<int>
+        ApplyFileOrdering(const int &aN, const common::Dimension &aDimension, dataunits::Locations<T> &aLocations,
+                          const std::string &aPath);
     };
 
     /**
