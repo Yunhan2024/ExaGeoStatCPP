@@ -16,13 +16,18 @@ Solvers (the problem is the same in every case):
                    path without hardware
   --qubo FILE      also write the QUBO (linear, quadratic, offset, variable meaning) as JSON
 
+--nonuniform (for locations whose density varies; off by default, so the default output is unchanged): every slab also
+gets layouts whose rows hold different numbers of tiles (tiles per row from a small DP that makes each row's tiles close
+to a given aspect ratio in that row's own extent), and the problem is solved for two slab cuts, equal tile counts and
+slabs about two tile sides thick in their own density; the cut with the lower energy is kept.
+
 Output: a permutation file for ExaGeoStatCPP (--ordering=file --ordering_file=OUT); tiles in slab/row order,
 locations inside a tile in cut order (the convention of the QSR orderings measured on Shaheen III).
 
-usage: qsr.py LOCATIONS.csv OUT.order [--tile 4096] [--solver exact|qpu|sa] [--qubo QUBO.json] [--reads 2000]"""
+usage: qsr.py LOCATIONS.csv OUT.order [--tile 4096] [--nonuniform] [--solver exact|qpu|sa] [--qubo QUBO.json] [--reads 2000]"""
 import os
 os.environ.setdefault('OPENBLAS_NUM_THREADS', '1')
-import sys, json, time, argparse, itertools
+import sys, json, math, time, argparse, itertools
 from pathlib import Path
 import numpy as np
 
@@ -31,6 +36,7 @@ sys.path.insert(0, str(HERE))
 import common, minbbox
 
 M = json.load(open(HERE / 'qsr_model.json'))
+GAMMAS, EVENCAP = (0.7, 1.0, 1.4), 5000         # --nonuniform: row aspect targets; cap on the near-even splits per row count
 BETAS = tuple(M['betas'])
 
 
@@ -90,7 +96,49 @@ def even(t, r):
     return sorted(tuple(a + (i in S) for i in range(r)) for S in itertools.combinations(range(r), m))
 
 
-def slab_options(p, slab, t, c, tile):
+def even_capped(t, r):
+    """even(t, r); beyond EVENCAP splits only those whose longer rows are contiguous (cyclically) or evenly spread"""
+    a, m = divmod(t, r)
+    if math.comb(r, m) <= EVENCAP: return even(t, r)
+    S = {frozenset((s + i) % r for i in range(m)) for s in range(r)} | {frozenset((s + (i * r) // m) % r for i in range(m)) for s in range(r)}
+    return sorted(tuple(a + (i in s) for i in range(r)) for s in S)
+
+
+def _partition(cost, t):
+    """cost[s, e] of one part covering items s..e-1; cheapest split of 0..t into consecutive parts"""
+    f = np.full(t + 1, np.inf); f[0] = 0; back = np.zeros(t + 1, int)
+    for e in range(1, t + 1): v = f[:e] + cost[:e, e]; back[e] = int(v.argmin()); f[e] = v[back[e]]
+    out = []; e = t
+    while e > 0: out.append(int(e - back[e])); e = int(back[e])
+    return out[::-1]
+
+
+def _spans(a, b, t, tile):
+    """for points sorted along a: extent along a and across (b) of the tiles s..s+k-1, as arrays [s][k-1]"""
+    out = []
+    for s in range(t):
+        bb = b[s * tile:]; k = np.arange(1, t - s + 1)
+        out.append((a[(s + k) * tile - 1] - a[s * tile], np.maximum.accumulate(bb)[tile - 1::tile] - np.minimum.accumulate(bb)[tile - 1::tile], k))
+    return out
+
+
+def adaptive_split(p, srt, ra, t, tile, gamma):
+    """tiles per row (rows = chunks along ra of the sorted indices srt): k * (row extent along ra) / (row extent across) -> gamma"""
+    cost = np.full((t + 1, t + 1), np.inf)
+    for s, (h, W, k) in enumerate(_spans(p[srt, ra], p[srt, 1 - ra], t, tile)):
+        cost[s, s + k] = k * np.log(np.maximum(k * h, 1e-300) / (gamma * np.maximum(W, 1e-300))) ** 2
+    return tuple(_partition(cost, t))
+
+
+def thick_counts(p, sa, tile):
+    """tiles per slab so that thickness / local tile side = sqrt(thickness * tiles / length) is close to K for every slab"""
+    nt = len(p) // tile; s = np.argsort(p[:, sa], kind='stable'); cost = np.full((nt + 1, nt + 1), np.inf)
+    for st, (w, L, k) in enumerate(_spans(p[s, sa], p[s, 1 - sa], nt, tile)):
+        cost[st, st + k] = k * np.log(np.sqrt(np.maximum(w * k, 1e-300) / np.maximum(L, 1e-300)) / M['K']) ** 2
+    return _partition(cost, nt)
+
+
+def slab_options(p, slab, t, c, tile, split=False):
     reg, U, rows, out, seen = {}, [], {}, [], set(); ext = np.ptp(p[slab], axis=0)
     srt = {ra: slab[np.argsort(p[slab, ra], kind='stable')] for ra in (0, 1)}
 
@@ -108,11 +156,18 @@ def slab_options(p, slab, t, c, tile):
         r0 = max(1, int(round(ext[ra] / c)))
         for r in sorted({r0 - 1, r0, r0 + 1}):
             if r < 1 or r > t: continue
-            for rc in even(t, r):
+            for rc in (even_capped if split else even)(t, r):
                 ids, st = [], 0
                 for k in rc: ids += row_tiles(ra, st, k); st += k
                 if frozenset(ids) in seen: continue
                 seen.add(frozenset(ids)); out.append(dict(name=f'rows{"xy"[ra]}{list(rc)}', ids=ids))
+    if split:
+        for ra in (0, 1):
+            for g in GAMMAS:
+                rc = adaptive_split(p, srt[ra], ra, t, tile, g); ids, st = [], 0
+                for k in rc: ids += row_tiles(ra, st, k); st += k
+                if frozenset(ids) in seen: continue
+                seen.add(frozenset(ids)); out.append(dict(name=f'split{"xy"[ra]}{g}{list(rc)}', ids=ids))
     lo, hi = boxes(p, U); A = np.zeros((len(out), len(U)))
     for k, o in enumerate(out): o['tiles'] = [U[i] for i in o['ids']]; A[k, o['ids']] = 1
     return dict(opts=out, lo=lo, hi=hi, A=A)
@@ -256,7 +311,7 @@ def sample_qubo(L, Q, solver, reads, label, big):
 
 
 # ---------------- driver ----------------
-def qsr(p, tile, solver='exact', qubo_path=None, reads=2000, log=print):
+def qsr(p, tile, solver='exact', qubo_path=None, reads=2000, log=print, nonuniform=False):
     n = len(p)
     if p.shape[1] != 2: raise SystemExit('qsr.py handles 2D locations only')
     if n % tile: raise SystemExit(f'{n} locations is not a multiple of the tile size {tile}')
@@ -265,12 +320,19 @@ def qsr(p, tile, solver='exact', qubo_path=None, reads=2000, log=print):
     t0 = time.perf_counter(); model = Surrogate(p, tile)
     nt = n // tile; ext = np.ptp(p, axis=0); c = np.sqrt(ext.prod() / nt)
     sa = int(np.argmax(ext)); ns = max(1, int(round(ext[sa] / (M['K'] * c))))
-    counts = [nt // ns + (1 if i < nt % ns else 0) for i in range(ns)]
-    slabs = [slab_options(p, s, t, c, tile) for s, t in zip(chunks(p, np.arange(n), sa, counts, tile), counts)]
-    opts = [s['opts'] for s in slabs]; lin = [within(model, s) for s in slabs]
-    cross = {(g, h): cross_matrix(model, slabs[g], slabs[h]) for g, h in itertools.combinations(range(ns), 2)}
-    full = prune(lin, cross); best = exhaustive(lin, cross, full); e_best = energy(lin, cross, best)
-    rec = dict(n=n, tile=tile, slabs=ns, slab_axis='xy'[sa], tiles_per_slab=counts, options_per_slab=[len(o) for o in opts],
+    alts = []
+    for cut in (('equal-count', 'density-thick') if nonuniform else ('equal-count',)):
+        counts = thick_counts(p, sa, tile) if cut == 'density-thick' else [nt // ns + (1 if i < nt % ns else 0) for i in range(ns)]
+        parts = chunks(p, np.arange(n), sa, counts, tile)    # density-thick slabs centre the row counts with their own tile side
+        slabs = [slab_options(p, s, t, np.sqrt(np.ptp(p[s], axis=0).prod() / t) if cut == 'density-thick' else c, tile, nonuniform)
+                 for s, t in zip(parts, counts)]
+        lin = [within(model, s) for s in slabs]
+        cross = {(g, h): cross_matrix(model, slabs[g], slabs[h]) for g, h in itertools.combinations(range(len(slabs)), 2)}
+        full = prune(lin, cross); best = exhaustive(lin, cross, full)
+        alts.append((energy(lin, cross, best), cut, counts, slabs, lin, cross, full, best))
+    e_best, cut, counts, slabs, lin, cross, full, best = min(alts, key=lambda a: a[0]); ns = len(slabs); opts = [s['opts'] for s in slabs]
+    rec = dict(n=n, tile=tile, nonuniform=nonuniform, slab_cut=cut, energy_per_slab_cut={a[1]: a[0] for a in alts},
+               slabs=ns, slab_axis='xy'[sa], tiles_per_slab=counts, options_per_slab=[len(o) for o in opts],
                options_after_pruning=[len(a) for a in full], exact_choice=[opts[g][o]['name'] for g, o in enumerate(best)],
                exact_energy=e_best, solver=solver)
     choice = best
@@ -313,12 +375,13 @@ def qsr(p, tile, solver='exact', qubo_path=None, reads=2000, log=print):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('locations'); ap.add_argument('out')
+    ap.add_argument('--nonuniform', action='store_true')
     ap.add_argument('--tile', type=int, default=4096); ap.add_argument('--solver', choices=('exact', 'qpu', 'sa'), default='exact')
     ap.add_argument('--qubo', default=None); ap.add_argument('--reads', type=int, default=2000)
     a = ap.parse_args()
     p = common.read_locations(a.locations)
-    order, rec = qsr(p, a.tile, a.solver, a.qubo, a.reads, log=lambda s: print(s, file=sys.stderr))
-    common.write_order(a.out, order, p, a.tile, f'qsr solver={a.solver}', extra=[f'choice {" ".join(rec["choice"])}'])
+    order, rec = qsr(p, a.tile, a.solver, a.qubo, a.reads, log=lambda s: print(s, file=sys.stderr), nonuniform=a.nonuniform)
+    common.write_order(a.out, order, p, a.tile, f'qsr solver={a.solver}' + (' nonuniform' if a.nonuniform else ''), extra=[f'choice {" ".join(rec["choice"])}'])
     print(json.dumps(rec, default=float))
 
 

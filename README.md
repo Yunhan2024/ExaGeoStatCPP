@@ -219,7 +219,8 @@ bin/examples/end-to-end/Example_Data_Generation_and_Modeling --N=48000 --lts=200
 A TLR run in a build without MPI prints the off-diagonal TLR ranks, so the same command with `--ordering=morton`,
 `--ordering=minbbox` and each permutation file compares the orderings on the same data. For synthetic data the permutation must be
 computed from the locations in generation order for the same `--N` and `--seed`; ExaGeoStat stops with an error
-if the permutation was made for another point set or row order. See [tools/ordering/README.md](tools/ordering/README.md)
+if the permutation was made for another point set or row order. For locations whose density varies, `qsr.py --nonuniform`
+and `shortseam.py --density` adapt the two methods to the local density. See [tools/ordering/README.md](tools/ordering/README.md)
 for the methods, the permutation file format, the QUBO and D-Wave options of QSR, the checks done and the limits.
 ## R Example
 Here is an example demonstrating how to use **ExaGeoStatCPP** in R:

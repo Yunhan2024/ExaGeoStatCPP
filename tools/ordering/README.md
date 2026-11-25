@@ -23,6 +23,10 @@ Both are 2D and need the number of locations to be a multiple of the tile size.
 python3 tools/ordering/qsr.py       locations.csv qsr.order       --tile 4096
 python3 tools/ordering/shortseam.py locations.csv shortseam.order --tile 4096
 
+# locations whose density varies (clusters, gaps, gradients): see "Non-uniform locations" below
+python3 tools/ordering/qsr.py       locations.csv qsr.order       --tile 4096 --nonuniform
+python3 tools/ordering/shortseam.py locations.csv shortseam.order --tile 4096 --density
+
 # QSR through the QUBO path
 python3 tools/ordering/qsr.py locations.csv qsr.order --qubo qsr_qubo.json   # exact solve, also write the QUBO
 python3 tools/ordering/qsr.py locations.csv qsr.order --solver sa            # simulated annealing on the QUBO
@@ -78,6 +82,62 @@ measured on Shaheen III.
 The algorithm code is in `shortseam_core/` (research name MMI: `mmi_v2.py` start designs and edge swaps, `mmi.py`
 power diagram, objective, optimizer and point assignment, `ccvt.py` helpers), unchanged from the research version.
 
+## Non-uniform locations (`qsr.py --nonuniform`, `shortseam.py --density`)
+
+Both options are off by default; without them the tools give exactly the orderings described above. They keep each
+method's structure, cost and solver and make the geometric quantities follow the local point density.
+
+**`qsr.py --nonuniform`** (in `qsr.py`)
+- Every slab gets six more layouts whose rows hold different numbers of tiles: rows along x or y, tiles per row from a
+  small dynamic program that brings each row's tiles close to a target aspect ratio (0.7, 1, 1.4) in that row's own
+  extent. With near-even rows, a slab that crosses a density change has to cut thin tiles on its dense side.
+- The problem is solved for two slab cuts: equal tile counts (as before) and slabs about two tile sides thick in their
+  own density (boundaries from a dynamic program; the row counts of such a slab are centred with its own tile side).
+  The energies are comparable (same surrogate); the cut with the lower energy is kept (`slab_cut` in the record).
+- Surrogate, penalty, pruning, exact search and the QUBO encoding are unchanged. When a slab would have more than 5000
+  near-even splits for one row count, only the splits with contiguous or evenly spread longer rows are enumerated.
+
+**`shortseam.py --density`** (`shortseam_core/mmi_rho.py`, `ccvt_nu.py`, `warp.py`)
+- Site level: a tile is measured by the integral of the point density over it (mass 1 per tile) instead of its area,
+  a seam by the integral of sqrt(density) along it instead of its length. Density = smoothed histogram of the
+  locations. Power diagram, soft-max objective, temperature ladder and optimizer are the same; for constant density
+  the two quantities equal area and length.
+- Start sites: the integer start designs assume uniform density, so the starts are the tile centroids of two tilings
+  computed first, an equal-count centroidal power diagram on the locations and the default ShortSeam run on
+  density-equalized coordinates (diffusion cartogram). Both are optimized; the one with the shorter longest seam at
+  site level is kept. A start that fails is skipped (`skipped_starts` in the record).
+- Point level: power weights balanced with band and step sizes relative to the local site spacing, then the
+  transportation LP.
+
+Measured on the five location designs of the 2023 KAUST competition on spatial statistics for large datasets
+(Chessboard, Left-bottom, Satellite, Clusters, Regular), first 897,024 of the 900,000 training locations, tile 4096,
+219 tiles. Score: longest seam between two tiles, counted as Delaunay edges of the locations crossing between them,
+in units of the count for one side of a square tile at uniform density (shorter is better; no rank is computed):
+
+| | Chessboard | Left-bottom | Satellite | Clusters | Regular |
+|---|---|---|---|---|---|
+| min-bbox | 2.86 | 1.79 | 1.68 | 2.52 | 1.69 |
+| `qsr.py` | 1.92 | 3.75 | 1.43 | 3.04 | 1.24 |
+| `qsr.py --nonuniform` | 1.39 | 2.52 | 1.48 | 1.77 | 1.24 |
+| `shortseam.py` | fails | fails | 1.14 | fails | 0.94 |
+| `shortseam.py --density` | 1.06 | 1.16 | 0.98 | 1.65 | 0.94 |
+
+On the 90K sets of the same designs (first 89,280 locations, tile 960) the largest rank of adjacent tile pairs
+(numerical rank of exp(-d/0.03), relative Frobenius tolerance 1e-7; an estimator, not HiCMA's ranks) is 89 / 100 /
+88 / 96 / 85 for `shortseam.py --density` and 169 / 144 / 137 / 148 / 120 for min-bbox; on these sets the seam score
+ranks orderings like this estimator in 238 of the 245 comparisons where the scores differ by more than 10%.
+`qsr.py --nonuniform` was scored with the seam length only.
+
+Limits of the two options:
+- No HiCMA ranks and no timings were measured for them; the 900K numbers are seam scores only.
+- `qsr.py --nonuniform` on Left-bottom is still longer than min-bbox (a slab has one thickness along its whole length,
+  and the density changes by a factor of 100 along it). It does not change Satellite or Regular. The QUBO is written
+  for the kept slab cut; `--solver qpu|sa` was not run with the new layouts.
+- `shortseam.py --density` on Clusters at 900K: the equal-count power diagram start fails (assignment LP infeasible),
+  so only the other start is used. On Chessboard at 900K one run took 2757 s (others 70-160 s plus 25-60 s per start);
+  the cause was not investigated. The integer start designs were not tried with the density-aware site level.
+- Times, 900K: `qsr.py --nonuniform` 67-172 s, Clusters 1140 s (default `qsr.py`: about 31 s, Clusters 1005 s).
+
 ## Checks done for this branch
 
 - `qsr.py` (default exact solver) reproduces, bit for bit, the QSR orderings measured on Shaheen III for the
@@ -88,6 +148,12 @@ power diagram, objective, optimizer and point assignment, `ccvt.py` helpers), un
   relative to the largest coupling) but was not run for this branch; it uses no spin-reversal transforms.
 - `shortseam.py --tile-order hilbert` reproduces, bit for bit, the research orderings for the same five sets;
   `spectral_tile_order` reproduces the spectral tile orders of the tile-order study for 122,880 and 245,760.
+- `--nonuniform` / `--density`: without the options, `qsr.py` (five 90K competition sets, tile 960) and `shortseam.py`
+  (Satellite and Regular, the two it can run) give the same permutations as before these options were added. With the
+  options, the permutations equal those of the research prototypes that produced the table above: `qsr.py
+  --nonuniform` on the five 900K sets, `shortseam.py --density --tile-order hilbert` on the five 90K sets and on four
+  900K sets (Chessboard at 900K was not rerun). `qsr.py --nonuniform --qubo` writes a 48-bit QUBO for the 90K
+  Chessboard set; no sampler was run on it.
 - End to end (StarPU build, 16,384 locations, tile 1024): ExaGeoStat's generated locations after
   `--ordering=file` equal the CSV rows in permutation order for both tools; wrong `n`, wrong point set and wrong
   row order are rejected. The 61,440-location QSR permutation is accepted for `--N=61440 --seed=42`.
